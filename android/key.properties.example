@@ -1,0 +1,7 @@
+# Másold le key.properties néven (ugyanebbe a mappába), és töltsd ki.
+# A key.properties NEM kerül a gitbe. Útmutató: docs/release-alairas.md
+# Az elérési útban perjelet (/) használj, ne fordított perjelet.
+storeFile=C:/Users/<felhasználó>/keys/keklang-release.jks
+storePassword=<a kulcstároló jelszava>
+keyAlias=keklang
+keyPassword=<a kulcs jelszava>
