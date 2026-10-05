@@ -5,8 +5,7 @@
 <h1 align="center">Kékláng</h1>
 
 <p align="center">
-  <b>Gázfogyasztás-követő Androidra</b><br>
-  Napi gázóra-leolvasás, kedvezményes keret, gázköltség és gázév végi becslés, egy helyen.
+  <b>Gázfogyasztás-követő alkalmazás Androidra</b><br>
 </p>
 
 <p align="center">
@@ -15,10 +14,7 @@
 
 ## Mire jó?
 
-A rezsicsökkentett gáz egy gázévben **1 729 m³-ig** kedvezményes áron (**102 Ft/m³**)
-fogy, felette viszont piaci áron (**747 Ft/m³**), ami kb. hétszeres drágulás. A gázév
-**augusztus 1-jétől a következő év július 31-ig** tart. Ezért fontos tudni, hogy
-**jó ütemben fogy-e a gáz**. A Kékláng ehhez minden nap egy gyors leolvasást kér, és
+Az alkalmazás használatával könyebben tudod nyomonkövetni a gázfogyasztásodat, hol tartasz épen, mennyi van még a kedvezményes keretedből és mennyit kell majd fizetned a hónap végén. A Kékláng ehhez minden nap egy gyors leolvasást kér, és
 ebből kiszámolja:
 
 - **mennyi fogyott a gázévben**, és ez a kedvezményes keret hány százaléka;
@@ -28,7 +24,7 @@ ebből kiszámolja:
   mekkora többletköltséggel jár;
 - **mely napokon és hónapokban** fogyott több az ajánlottnál.
 
-Minden adat a telefonon marad, nincs regisztráció és nincs szerver.
+Minden adat a telefonon marad (SQLite adatbázisban), nincs regisztráció és nincs szerver.
 
 ## Képernyők
 
