@@ -6,44 +6,50 @@ class MeterReading {
   final double value;
 }
 
-/// A dizájnban szereplő alapértelmezett havi ajánlott értékek (m³), naptári
-/// hónap szerint indexelve: január–december.
-const defaultMonthlyTargets = <double>[320, 290, 220, 125, 60, 30, 25, 25, 65, 140, 190, 220];
+/// A hivatalos havi kedvezményes keret (jelleggörbe) MJ-ben, naptári hónap
+/// szerint indexelve: január–december. Összege a teljes éves keret.
+/// Forrás: MVM Next tájékoztató a földgázszámláról (2024. aug. 1-jétől rögzített).
+const defaultMonthlyKeretMJ = <double>[12365, 10421, 8915, 5145, 1827, 635, 512, 565, 1109, 3724, 7490, 10937];
 
-/// A rezsicsökkentett (kedvezményes) éves keret m³-ben.
-const defaultAnnualLimit = 1729.0;
+/// A rezsicsökkentett éves keret felhasználási helyenként, MJ-ben (≥ 1 729 m³).
+const defaultAnnualLimitMJ = 63645.0;
 
-/// Kedvezményes ár a keretig, Ft/m³.
+/// Tájékoztató fűtőérték, MJ/m³; a pontos érték a szolgáltató gázminőség-oldalán.
+const defaultHeatingValue = 34.8;
+
+/// Kedvezményes ár, Ft/m³.
 const defaultDiscountPrice = 102.0;
 
-/// Piaci ár a keret felett, Ft/m³.
-const defaultMarketPrice = 747.0;
+/// Lakossági piaci ár a keret felett, bruttó Ft/MJ.
+const defaultMarketPriceMJ = 22.002;
 
 /// A gázév első hónapja: augusztus (a fordulónap július 31.).
 const gasYearStartMonth = 8;
 
-/// Kétsávos gázár: a keretig kedvezményes, felette piaci ár.
+/// Kétsávos gázár: a keretig kedvezményes, felette piaci ár. Minden érték
+/// m³-ben és Ft/m³-ben (a fűtőértékkel már átszámolva).
 class GasPricing {
   const GasPricing({
-    this.limit = defaultAnnualLimit,
+    required this.limit,
     this.discountPrice = defaultDiscountPrice,
-    this.marketPrice = defaultMarketPrice,
+    this.marketPrice = defaultMarketPriceMJ * defaultHeatingValue,
   });
 
   final double limit;
   final double discountPrice;
   final double marketPrice;
 
-  /// A gázév elejétől számított `volume` m³ teljes ára forintban.
-  double costOf(double volume) {
-    if (volume <= 0) return 0;
-    final discounted = volume < limit ? volume : limit;
-    final over = volume > limit ? volume - limit : 0.0;
+  /// `used` m³ ára egy `keret` m³-es kerettel: a keretig kedvezményes, felette
+  /// piaci áron. Ez a havi diktálásos számla egy hónapja, és az éves elszámolás is.
+  double billFor(double used, double keret) {
+    if (used <= 0) return 0;
+    final discounted = used < keret ? used : keret;
+    final over = used > keret ? used - keret : 0.0;
     return discounted * discountPrice + over * marketPrice;
   }
 
-  /// A gázév elejétől már elfogyasztott `before` m³ után következő `amount` m³ ára.
-  double costOfNext(double before, double amount) => costOf(before + amount) - costOf(before);
+  /// A gázév elejétől számított `volume` m³ ára az éves kerettel (éves elszámolás).
+  double costOf(double volume) => billFor(volume, limit);
 
   /// Hányszorosa a piaci ár a kedvezményesnek.
   double get multiplier => discountPrice <= 0 ? 0 : marketPrice / discountPrice;
@@ -51,9 +57,10 @@ class GasPricing {
 
 class AppSettings {
   const AppSettings({
-    this.annualLimit = defaultAnnualLimit,
+    this.annualLimitMJ = defaultAnnualLimitMJ,
+    this.heatingValue = defaultHeatingValue,
     this.discountPrice = defaultDiscountPrice,
-    this.marketPrice = defaultMarketPrice,
+    this.marketPriceMJ = defaultMarketPriceMJ,
     this.dailyReminder = true,
     this.reminderMinutes = 19 * 60,
     this.notifyAt80 = true,
@@ -62,9 +69,17 @@ class AppSettings {
     this.animations = true,
   });
 
-  final double annualLimit;
+  /// Az éves kedvezményes keret MJ-ben.
+  final double annualLimitMJ;
+
+  /// Fűtőérték, MJ/m³: ezzel számolunk át energia és térfogat között.
+  final double heatingValue;
+
+  /// Kedvezményes ár, Ft/m³.
   final double discountPrice;
-  final double marketPrice;
+
+  /// Piaci ár, Ft/MJ.
+  final double marketPriceMJ;
   final bool dailyReminder;
 
   /// Az emlékeztető időpontja éjfél óta eltelt percekben.
@@ -74,11 +89,20 @@ class AppSettings {
   final bool weeklySummary;
   final bool animations;
 
+  /// Az éves keret m³-ben a fűtőérték alapján.
+  double get annualLimit => annualLimitMJ / heatingValue;
+
+  /// A piaci ár Ft/m³-ben a fűtőérték alapján.
+  double get marketPrice => marketPriceMJ * heatingValue;
+
   GasPricing get pricing => GasPricing(limit: annualLimit, discountPrice: discountPrice, marketPrice: marketPrice);
 
-  static const kAnnualLimit = 'annualLimit';
+  // Az MJ-alapú értékek új kulcsokat kaptak; a régi, m³-ben tárolt
+  // `annualLimit` és `marketPrice` kulcsokat nem olvassuk.
+  static const kAnnualLimitMJ = 'annualLimitMJ';
+  static const kHeatingValue = 'heatingValue';
   static const kDiscountPrice = 'discountPrice';
-  static const kMarketPrice = 'marketPrice';
+  static const kMarketPriceMJ = 'marketPriceMJ';
   static const kDailyReminder = 'dailyReminder';
   static const kReminderMinutes = 'reminderMinutes';
   static const kNotifyAt80 = 'notifyAt80';
@@ -89,11 +113,16 @@ class AppSettings {
   factory AppSettings.fromMap(Map<String, String> m) {
     const d = AppSettings();
     bool b(String k, bool def) => m[k] == null ? def : m[k] == 'true';
-    double n(String k, double def) => double.tryParse(m[k] ?? '') ?? def;
+    double n(String k, double def) {
+      final v = double.tryParse(m[k] ?? '');
+      return v != null && v > 0 ? v : def;
+    }
+
     return AppSettings(
-      annualLimit: n(kAnnualLimit, d.annualLimit),
+      annualLimitMJ: n(kAnnualLimitMJ, d.annualLimitMJ),
+      heatingValue: n(kHeatingValue, d.heatingValue),
       discountPrice: n(kDiscountPrice, d.discountPrice),
-      marketPrice: n(kMarketPrice, d.marketPrice),
+      marketPriceMJ: n(kMarketPriceMJ, d.marketPriceMJ),
       dailyReminder: b(kDailyReminder, d.dailyReminder),
       reminderMinutes: int.tryParse(m[kReminderMinutes] ?? '') ?? d.reminderMinutes,
       notifyAt80: b(kNotifyAt80, d.notifyAt80),

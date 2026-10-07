@@ -50,9 +50,9 @@ Future<void> _seed(AppDatabase db) async {
   while (day.isBefore(end)) {
     day = addDays(day, 1);
     i++;
-    final base = defaultMonthlyTargets[day.month - 1] / daysInMonth(day.year, day.month);
+    final base = defaultMonthlyKeretMJ[day.month - 1] / defaultHeatingValue / daysInMonth(day.year, day.month);
     final noise = 1 + .22 * math.sin(i * 1.7) + .12 * math.cos(i * .53);
-    value += base * .94 * noise;
+    value += base * .92 * noise;
     if (day != DateTime(2026, 3, 2)) await repo.saveReading(day, double.parse(value.toStringAsFixed(3)));
   }
 }
@@ -103,6 +103,9 @@ void main() {
     }
 
     await capture('fooldal');
+    // A Gázköltség kártya a Főoldal alján van: legörgetve is.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -700));
+    await capture('fooldal-koltseg');
     for (final (location, name) in [
       ('/statisztika', 'statisztika'),
       ('/limit', 'limit'),

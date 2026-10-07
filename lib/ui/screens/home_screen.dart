@@ -107,35 +107,39 @@ class _RingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = model;
-    final over = m.usedRatio > 1;
+    final monthName = Fmt.monthNames[m.today.month - 1];
     return Panel(
       radius: 28,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      padding: const EdgeInsets.fromLTRB(14, 18, 14, 16),
       child: Column(
         children: [
-          Semantics(
-            label: 'Az éves keret ${Fmt.percent(m.usedRatio)}-a elfogyott',
-            child: RingGauge(
-              progress: m.usedRatio,
-              pace: m.recommendedPaceRatio,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(Fmt.m3(m.yearUsed), style: mono(46, letterSpacing: -1.5, height: 1)),
-                  const SizedBox(height: 2),
-                  Text('m³ a ${Fmt.m3(m.annualLimit)} m³-es keretből', style: sans(13, color: AppColors.muted)),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: (over ? AppColors.warn : AppColors.accent).withValues(alpha: .14),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(Fmt.percent(m.usedRatio), style: mono(12, color: over ? AppColors.warn : AppColors.accent)),
-                  ),
-                ],
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: _MiniRing(
+                  title: 'Gázév',
+                  semantics: 'Az éves keret ${Fmt.percent(m.usedRatio)}-a elfogyott',
+                  used: m.yearUsed,
+                  keret: m.annualLimit,
+                  ratio: m.usedRatio,
+                  pace: m.recommendedPaceRatio,
+                  paceValue: m.recommendedToDate,
+                ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _MiniRing(
+                  title: monthName,
+                  semantics: 'A $monthName keret ${Fmt.percent(m.monthUsedRatio)}-a elfogyott',
+                  used: m.monthUsed,
+                  keret: m.monthKeret,
+                  ratio: m.monthUsedRatio,
+                  pace: m.monthKeret <= 0 ? 0 : m.monthKeretToDate / m.monthKeret,
+                  paceValue: m.monthKeretToDate,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           Wrap(
@@ -145,11 +149,11 @@ class _RingCard extends StatelessWidget {
             children: [
               LegendItem(
                 swatch: Container(width: 8, height: 8, decoration: const BoxDecoration(color: AppColors.accent, shape: BoxShape.circle)),
-                label: 'Eddigi fogyasztás',
+                label: 'eddigi fogyasztás',
               ),
               LegendItem(
                 swatch: Container(width: 3, height: 12, decoration: BoxDecoration(color: AppColors.text, borderRadius: BorderRadius.circular(2))),
-                label: 'Ajánlott ütem (${Fmt.percent(m.recommendedPaceRatio)})',
+                label: 'ahol a keret szerint ma tartanod kellene',
               ),
             ],
           ),
@@ -171,7 +175,76 @@ class _RingCard extends StatelessWidget {
   }
 }
 
-/// Eddigi és becsült gázköltség a kétsávos ár alapján, túllépési figyelmeztetéssel.
+/// Egy kisebb gyűrű a kártyán: cím, `used / keret`, százalék, és alatta a fehér
+/// jelölő értéke (hol kellene ma tartani a keret szerint).
+class _MiniRing extends StatelessWidget {
+  const _MiniRing({
+    required this.title,
+    required this.semantics,
+    required this.used,
+    required this.keret,
+    required this.ratio,
+    required this.pace,
+    required this.paceValue,
+  });
+
+  final String title;
+  final String semantics;
+  final double used;
+  final double keret;
+  final double ratio;
+  final double pace;
+  final double paceValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final over = ratio > 1;
+    final color = over ? AppColors.warn : AppColors.accent;
+    return Column(
+      children: [
+        Text(title, style: sans(14, weight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        Semantics(
+          label: semantics,
+          child: LayoutBuilder(builder: (context, c) {
+            final size = c.maxWidth.clamp(110.0, 160.0);
+            return RingGauge(
+              size: size,
+              progress: ratio,
+              pace: pace,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FittedBox(child: Text(Fmt.m3(used), style: mono(size * .2, letterSpacing: -1, height: 1, color: over ? AppColors.warn : null))),
+                  const SizedBox(height: 2),
+                  Text('/ ${Fmt.m3(keret)} m³', style: mono(11, weight: FontWeight.w400, color: AppColors.muted)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(color: color.withValues(alpha: .14), borderRadius: BorderRadius.circular(999)),
+                    child: Text(Fmt.percent(ratio), style: mono(11, color: color)),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(width: 3, height: 12, decoration: BoxDecoration(color: AppColors.text, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(width: 6),
+            Text('ma: ${Fmt.m3(paceValue)} m³', style: mono(12, weight: FontWeight.w400, color: AppColors.muted)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Havi diktálás szerinti gázköltség: a hónap kerete, a havi számla, a gázév
+/// havi számláinak összege és az éves elszámolás utáni összeg.
 class _CostCard extends StatelessWidget {
   const _CostCard({required this.model});
 
@@ -180,20 +253,28 @@ class _CostCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final m = model;
-    final est = m.estimatedCost;
-    final over = m.estimatedOverLimit ?? 0;
+    final monthName = Fmt.monthNames[m.today.month - 1];
+    final yearOver = m.estimatedOverLimit ?? 0;
     final alreadyOver = m.yearUsed > m.annualLimit;
-    final warn = alreadyOver || over > 0;
+    final yearWarn = alreadyOver || yearOver > 0;
+    final monthWarn = m.monthReachesMarketPrice;
+    final warn = yearWarn || monthWarn;
+    final refund = m.estimatedRefund ?? 0;
     final String note;
     if (alreadyOver) {
-      note = 'Túllépted a kedvezményes keretet. A további gáz ${Fmt.unitPrice(m.marketPrice)} '
-          '(${Fmt.times(m.pricing.multiplier)} drágább).';
-    } else if (over > 0) {
-      note = 'A becslés szerint kb. ${Fmt.m3(over)} m³-rel lépnéd túl a keretet. Ez a rész '
-          '${Fmt.unitPrice(m.marketPrice)} áron kb. +${Fmt.ft(m.estimatedExtraCost!)} többletköltség.';
+      note = 'Túllépted az éves kedvezményes keretet. A további gáz ${Fmt.unitPrice(m.marketPrice)} '
+          '(${Fmt.times(m.pricing.multiplier)} drágább), és ezt az éves elszámolás sem hozza vissza.';
+    } else if (yearOver > 0) {
+      note = 'A becslés szerint kb. ${Fmt.m3(yearOver)} m³-rel lépnéd túl az éves keretet. Ez a rész '
+          '${Fmt.unitPrice(m.marketPrice)} áron kb. +${Fmt.ft(m.estimatedExtraCost!)}, és nem jár vissza.';
+    } else if (monthWarn) {
+      note = 'A $monthName keret ${Fmt.m3(m.monthKeret)} m³, a becslés szerint kb. '
+          '${Fmt.m3(m.estimatedMonthOver)} m³ piaci áron kerül a havi számlára '
+          '(+${Fmt.ft(m.estimatedMonthOver * (m.marketPrice - m.discountPrice))}). '
+          'Ha éves szinten a keret alatt maradsz, ez az éves elszámoláskor visszajár.';
     } else {
-      note = '${Fmt.m3(m.annualLimit)} m³-ig ${Fmt.unitPrice(m.discountPrice)}, '
-          'felette ${Fmt.unitPrice(m.marketPrice)} (${Fmt.times(m.pricing.multiplier)}).';
+      note = 'A havi keret felett a havi számlán ${Fmt.unitPrice(m.marketPrice)} '
+          '(${Fmt.times(m.pricing.multiplier)}) a kedvezményes ${Fmt.unitPrice(m.discountPrice)} helyett.';
     }
 
     return Panel(
@@ -201,8 +282,19 @@ class _CostCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Gázköltség', style: sans(15, weight: FontWeight.w700)),
-          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(child: Text('Gázköltség', style: sans(15, weight: FontWeight.w700))),
+              Text('havi diktálás', style: sans(12, color: AppColors.muted)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _MonthKeretBar(model: m),
+          const SizedBox(height: 12),
+          _SavedKeretRow(model: m),
+          const SizedBox(height: 14),
           _CostTableRow(
             label: '',
             soFar: Text('Eddig', style: sans(11.5, color: AppColors.muted)),
@@ -210,19 +302,32 @@ class _CostCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           _CostTableRow(
-            label: Fmt.monthNames[m.today.month - 1],
+            label: monthName,
             soFar: _amount(Fmt.ft(m.monthCostSoFar)),
             estimate: _amount(
               m.estimatedMonthCost == null ? '—' : '~${Fmt.ft(m.estimatedMonthCost!)}',
-              color: m.monthReachesMarketPrice ? AppColors.warn : AppColors.accent,
+              color: monthWarn ? AppColors.warn : AppColors.accent,
             ),
           ),
           const SizedBox(height: 6),
           _CostTableRow(
             label: 'Gázév',
-            soFar: _amount(Fmt.ft(m.costSoFar)),
-            estimate: _amount(est == null ? '—' : '~${Fmt.ft(est)}', color: warn ? AppColors.warn : AppColors.accent),
+            soFar: _amount(Fmt.ft(m.billsSoFar)),
+            estimate: _amount(
+              m.estimatedBillsTotal == null ? '—' : '~${Fmt.ft(m.estimatedBillsTotal!)}',
+              color: warn ? AppColors.warn : AppColors.accent,
+            ),
           ),
+          if (refund > 0) ...[
+            const SizedBox(height: 6),
+            _CostTableRow(
+              label: 'Elszámolás',
+              soFar: Text('éves elszámolás után', style: sans(11.5, color: AppColors.muted)),
+              estimate: _amount('~${Fmt.ft(m.estimatedCost!)}', color: AppColors.accent),
+            ),
+            const SizedBox(height: 4),
+            Text('Várhatóan visszajár: ~${Fmt.ft(refund)}', style: sans(12, color: AppColors.muted)),
+          ],
           const SizedBox(height: 10),
           Container(
             width: double.infinity,
@@ -235,6 +340,169 @@ class _CostCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// A lezárt hónapokból megmaradt (fel nem használt) keret: ennyivel lehet egy
+/// hidegebb hónapban a havi keret felett fogyasztani úgy, hogy az éves
+/// elszámoláskor még kedvezményes áron számolják el.
+class _SavedKeretRow extends StatelessWidget {
+  const _SavedKeretRow({required this.model});
+
+  final ConsumptionModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = model;
+    final saved = m.savedKeret;
+    final hasData = m.hasClosedTrackedMonth;
+    final positive = saved >= 0;
+    final color = !hasData ? AppColors.muted : (positive ? AppColors.accent : AppColors.warn);
+    final String note;
+    if (!hasData) {
+      note = 'Az első lezárt hónap után látszik, mennyi keret maradt meg.';
+    } else if (positive) {
+      note = 'Ennyivel fogyaszthatsz többet egy hidegebb hónapban: a havi számlán piaci áron '
+          'szerepel, de az éves elszámoláskor visszajár.';
+    } else {
+      note = 'Az eddigi hónapokban összesen ennyivel fogyott több a keretnél.';
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Expanded(child: Text('Korábbi hónapokból megmaradt keret', style: sans(13, color: AppColors.muted))),
+              Text(
+                hasData ? '${positive ? '+' : '−'}${Fmt.m3(saved.abs())} m³' : '—',
+                style: mono(16, color: color),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(note, style: sans(12, color: AppColors.muted)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Az aktuális hónap kedvezményes keretének kihasználtsága: eddigi fogyasztás
+/// sávként, a hónap végére becsült fogyasztás jelölővel.
+class _MonthKeretBar extends StatelessWidget {
+  const _MonthKeretBar({required this.model});
+
+  final ConsumptionModel model;
+
+  @override
+  Widget build(BuildContext context) {
+    final m = model;
+    final keret = m.monthKeret;
+    final used = m.monthUsed;
+    final est = m.estimatedMonthUsed;
+    final scale = [keret, used, est ?? 0].reduce((a, b) => a > b ? a : b) * 1.05;
+    double frac(double v) => scale <= 0 ? 0 : (v / scale).clamp(0.0, 1.0);
+    final over = used > keret;
+    final monthName = Fmt.monthNames[m.today.month - 1];
+    final daily = keret / (m.monthEnd.day);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Expanded(child: Text('$monthName kerete', style: sans(13, color: AppColors.muted))),
+            Text.rich(TextSpan(children: [
+              TextSpan(text: Fmt.m3(used), style: mono(15, color: over ? AppColors.warn : AppColors.text)),
+              TextSpan(text: ' / ${Fmt.m3(keret)} m³', style: mono(13, weight: FontWeight.w400, color: AppColors.muted)),
+            ])),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(builder: (context, c) {
+          final w = c.maxWidth;
+          return SizedBox(
+            height: 22,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 6,
+                  height: 10,
+                  child: Container(decoration: BoxDecoration(color: AppColors.track, borderRadius: BorderRadius.circular(5))),
+                ),
+                // A keret feletti tartomány halvány borostyánnal.
+                Positioned(
+                  left: w * frac(keret),
+                  right: 0,
+                  top: 6,
+                  height: 10,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.warn.withValues(alpha: .22),
+                      borderRadius: const BorderRadius.horizontal(right: Radius.circular(5)),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 0,
+                  top: 6,
+                  height: 10,
+                  width: w * frac(used),
+                  child: Container(
+                    decoration: BoxDecoration(color: over ? AppColors.warn : AppColors.accent, borderRadius: BorderRadius.circular(5)),
+                  ),
+                ),
+                if (est != null)
+                  Positioned(
+                    left: w * frac(est) - 1.5,
+                    top: 0,
+                    child: Container(
+                      width: 3,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: est > keret ? AppColors.warn : AppColors.text,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 12,
+          runSpacing: 4,
+          children: [
+            if (est != null)
+              LegendItem(
+                swatch: Container(
+                  width: 3,
+                  height: 12,
+                  decoration: BoxDecoration(color: est > keret ? AppColors.warn : AppColors.text, borderRadius: BorderRadius.circular(2)),
+                ),
+                label: 'hónap végére becsült: ~${Fmt.m3(est)} m³',
+              ),
+            Text('napi keret: ~${Fmt.m3One(daily)} m³', style: sans(12, color: AppColors.muted)),
+          ],
+        ),
+      ],
     );
   }
 }

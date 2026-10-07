@@ -17,6 +17,7 @@ final repositoryProvider = Provider<GasRepository>((ref) => GasRepository(ref.wa
 
 final readingsProvider = StreamProvider<List<MeterReading>>((ref) => ref.watch(repositoryProvider).watchReadings());
 
+/// A havi kedvezményes keret MJ-ben (naptári hónap szerint, 0 = január).
 final monthlyTargetsProvider = StreamProvider<List<double>>((ref) => ref.watch(repositoryProvider).watchMonthlyTargets());
 
 final settingsProvider = StreamProvider<AppSettings>((ref) => ref.watch(repositoryProvider).watchSettings());
@@ -44,10 +45,12 @@ final consumptionProvider = Provider<AsyncValue<ConsumptionModel>>((ref) {
   final t = targets.value;
   final s = settings.value;
   if (r == null || t == null || s == null) return const AsyncLoading();
+  // A modell m³-ben számol: az MJ-ben tárolt kereteket a fűtőértékkel váltjuk át.
   return AsyncData(ConsumptionModel(
     readings: r,
-    monthlyTargets: t,
+    monthlyTargets: [for (final mj in t) mj / s.heatingValue],
     annualLimit: s.annualLimit,
+    heatingValue: s.heatingValue,
     discountPrice: s.discountPrice,
     marketPrice: s.marketPrice,
     today: ref.watch(todayProvider),

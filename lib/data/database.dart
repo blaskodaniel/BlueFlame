@@ -12,7 +12,7 @@ class Readings extends Table {
   RealColumn get value => real()();
 }
 
-/// Havi ajánlott fogyasztás (m³), `month` 1–12.
+/// Havi kedvezményes keret MJ-ben (jelleggörbe), `month` 1–12.
 class MonthlyTargets extends Table {
   IntColumn get month => integer()();
   RealColumn get value => real()();
@@ -34,19 +34,29 @@ class SettingEntries extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? driftDatabase(name: 'keklang'));
 
+  /// 1: havi ajánlott értékek m³-ben (a dizájn értékei).
+  /// 2: havi kedvezményes keret MJ-ben (hivatalos jelleggörbe).
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
+
+  Future<void> _insertDefaultKeret() => batch((b) {
+        b.insertAllOnConflictUpdate(monthlyTargets, [
+          for (var i = 0; i < 12; i++) MonthlyTargetsCompanion.insert(month: Value(i + 1), value: defaultMonthlyKeretMJ[i]),
+        ]);
+      });
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onCreate: (m) async {
           await m.createAll();
-          await batch((b) {
-            b.insertAll(monthlyTargets, [
-              for (var i = 0; i < 12; i++)
-                MonthlyTargetsCompanion.insert(month: Value(i + 1), value: defaultMonthlyTargets[i]),
-            ]);
-          });
+          await _insertDefaultKeret();
+        },
+        onUpgrade: (m, from, to) async {
+          if (from < 2) {
+            // A régi m³-es értékek helyett a hivatalos, MJ-ben megadott keret.
+            await delete(monthlyTargets).go();
+            await _insertDefaultKeret();
+          }
         },
       );
 }

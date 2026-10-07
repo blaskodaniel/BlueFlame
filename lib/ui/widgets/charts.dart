@@ -16,13 +16,16 @@ import 'motion.dart';
 
 /// Az éves keret felhasználtságát mutató gyűrű, az ajánlott ütem jelölőjével.
 class RingGauge extends StatelessWidget {
-  const RingGauge({super.key, required this.progress, required this.pace, required this.child, this.size = 240});
+  const RingGauge({super.key, required this.progress, required this.pace, required this.child, this.paceLabel, this.size = 240});
 
   /// Felhasznált arány (0–1, a túllépés is 1-nél áll meg a rajzon).
   final double progress;
 
   /// Az ajánlott ütem aránya (0–1).
   final double pace;
+
+  /// A jelölő mellé, a gyűrűn kívülre írt érték (pl. `73`).
+  final String? paceLabel;
   final Widget child;
   final double size;
 
@@ -35,7 +38,7 @@ class RingGauge extends StatelessWidget {
         delay: const Duration(milliseconds: 200),
         duration: const Duration(milliseconds: 1800),
         builder: (context, t, child) => CustomPaint(
-          painter: _RingPainter(progress: progress.clamp(0, 1) * t, pace: pace.clamp(0, 1), over: progress > 1),
+          painter: _RingPainter(progress: progress.clamp(0, 1) * t, pace: pace.clamp(0, 1), over: progress > 1, paceLabel: paceLabel),
           child: child,
         ),
         child: Center(child: child),
@@ -45,11 +48,12 @@ class RingGauge extends StatelessWidget {
 }
 
 class _RingPainter extends CustomPainter {
-  _RingPainter({required this.progress, required this.pace, required this.over});
+  _RingPainter({required this.progress, required this.pace, required this.over, this.paceLabel});
 
   final double progress;
   final double pace;
   final bool over;
+  final String? paceLabel;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -87,10 +91,30 @@ class _RingPainter extends CustomPainter {
       ..color = AppColors.text
       ..strokeWidth = 3 * scale
       ..strokeCap = StrokeCap.round);
+
+    // A jelölő értéke a gyűrűn kívül, kis kiemelt címkében (a kártya
+    // belső margójába lóghat, a gyűrű közepét nem takarja).
+    if (paceLabel != null) {
+      final tp = TextPainter(
+        text: TextSpan(text: '$paceLabel m³', style: mono(10.5, color: AppColors.text)),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final at = c + dir * (r + 26 * scale);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromCenter(center: at, width: tp.width + 10, height: tp.height + 4),
+        const Radius.circular(6),
+      );
+      canvas.drawRRect(rect, Paint()..color = AppColors.surface2);
+      canvas.drawRRect(rect, Paint()
+        ..style = PaintingStyle.stroke
+        ..color = AppColors.text.withValues(alpha: .35));
+      tp.paint(canvas, at - Offset(tp.width / 2, tp.height / 2));
+    }
   }
 
   @override
-  bool shouldRepaint(_RingPainter old) => old.progress != progress || old.pace != pace || old.over != over;
+  bool shouldRepaint(_RingPainter old) =>
+      old.progress != progress || old.pace != pace || old.over != over || old.paceLabel != paceLabel;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,13 +122,16 @@ class _RingPainter extends CustomPainter {
 // ---------------------------------------------------------------------------
 
 class BarDatum {
-  const BarDatum({required this.value, this.recommended, this.label, this.valueLabel, this.highlight = false});
+  const BarDatum({required this.value, this.recommended, this.label, this.valueLabel, this.valueSubLabel, this.highlight = false});
 
   /// `null`: nincs adat (halvány csonk).
   final double? value;
   final double? recommended;
   final String? label;
   final String? valueLabel;
+
+  /// Második, halványabb sor az értékfelirat alatt (pl. a havi keret: `/107`).
+  final String? valueSubLabel;
   final bool highlight;
 }
 
@@ -159,8 +186,10 @@ class UsageBars extends StatelessWidget {
     final maxV = bars.fold<double>(0, (m, b) => math.max(m, math.max(b.value ?? 0, showRecommended ? b.recommended ?? 0 : 0)));
     final top = maxV <= 0 ? 1.0 : maxV;
     final hasValueLabels = bars.any((b) => b.valueLabel != null);
-    // 16 px a felirat + tartalék, hogy az ajánlott-szint fölé tolt felirat is elférjen.
-    final labelSpace = hasValueLabels ? 20.0 : 0.0;
+    final hasSubLabels = bars.any((b) => b.valueSubLabel != null);
+    // Soronként 16 px a felirat (+ tartalék, hogy az ajánlott-szint fölé tolt felirat is elférjen).
+    final labelHeight = hasSubLabels ? 28.0 : 16.0;
+    final labelSpace = hasValueLabels ? labelHeight + 4 : 0.0;
     final plot = height - labelSpace;
 
     Color colorFor(BarDatum b, int i) {
@@ -190,14 +219,25 @@ class UsageBars extends StatelessWidget {
                           if (bars[i].valueLabel != null)
                             // A felirat szélesebb lehet az oszlopnál, ezért nem zsugorítjuk.
                             SizedBox(
-                              height: 16,
+                              height: labelHeight,
                               child: OverflowBox(
                                 maxWidth: 64,
-                                alignment: Alignment.topCenter,
-                                child: Text(
-                                  bars[i].valueLabel!,
+                                alignment: Alignment.bottomCenter,
+                                child: Text.rich(
+                                  TextSpan(children: [
+                                    TextSpan(
+                                      text: bars[i].valueLabel!,
+                                      style: mono(valueLabelSize, weight: FontWeight.w400, color: _labelColor(bars[i])),
+                                    ),
+                                    if (bars[i].valueSubLabel != null)
+                                      TextSpan(
+                                        text: '\n${bars[i].valueSubLabel!}',
+                                        style: mono(valueLabelSize - 1, weight: FontWeight.w400, color: AppColors.muted.withValues(alpha: .8)),
+                                      ),
+                                  ]),
+                                  textAlign: TextAlign.center,
                                   softWrap: false,
-                                  style: mono(valueLabelSize, weight: FontWeight.w400, color: _labelColor(bars[i])),
+                                  maxLines: 2,
                                 ),
                               ),
                             ),

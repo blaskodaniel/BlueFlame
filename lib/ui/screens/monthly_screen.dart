@@ -11,7 +11,11 @@ import '../widgets/charts.dart';
 import '../widgets/common.dart';
 import '../widgets/motion.dart';
 
-/// A 12 havi ajánlott érték szerkesztése.
+/// A havi kedvezményes keret (jelleggörbe) szerkesztése m³-ben.
+///
+/// A keret MJ-ben tárolódik; a mezők a fűtőértékkel átszámolt, kerekített
+/// m³-t mutatják. Csak az átírt hónapok kapnak új MJ-értéket, így a hivatalos
+/// értékek nem torzulnak a kerekítéstől.
 class MonthlyScreen extends ConsumerStatefulWidget {
   const MonthlyScreen({super.key});
 
@@ -23,6 +27,10 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
   final _controllers = List.generate(12, (_) => TextEditingController());
   bool _loaded = false;
 
+  /// A betöltött (vagy visszaállított) MJ-értékek és a hozzájuk tartozó mezőszövegek.
+  List<double> _mj = [...defaultMonthlyKeretMJ];
+  List<String> _initialText = List.filled(12, '');
+
   @override
   void dispose() {
     for (final c in _controllers) {
@@ -31,18 +39,24 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
     super.dispose();
   }
 
-  List<double> get _values => [for (final c in _controllers) double.tryParse(c.text) ?? 0];
+  /// A mezők szerinti MJ-értékek: az át nem írt hónapok az eredeti MJ-t tartják.
+  List<double> _effectiveMJ(double heatingValue) => [
+        for (var i = 0; i < 12; i++)
+          _controllers[i].text == _initialText[i] ? _mj[i] : (double.tryParse(_controllers[i].text) ?? 0) * heatingValue,
+      ];
 
-  void _fill(List<double> values) {
+  void _fill(List<double> mj, double heatingValue) {
+    _mj = [...mj];
+    _initialText = [for (final v in mj) (v / heatingValue).round().toString()];
     for (var i = 0; i < 12; i++) {
-      _controllers[i].text = values[i].round().toString();
+      _controllers[i].text = _initialText[i];
     }
   }
 
-  Future<void> _save() async {
-    await ref.read(repositoryProvider).saveMonthlyTargets(_values);
+  Future<void> _save(double heatingValue) async {
+    await ref.read(repositoryProvider).saveMonthlyTargets(_effectiveMJ(heatingValue));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Havi értékek mentve')));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Havi keret mentve')));
     _close();
   }
 
@@ -53,19 +67,22 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
     return Scaffold(
       body: SafeArea(
         child: ConsumptionBuilder(builder: (context, m) {
+          final hv = m.heatingValue;
           if (!_loaded) {
-            _fill(m.monthlyTargets);
+            _fill(ref.read(monthlyTargetsProvider).value ?? defaultMonthlyKeretMJ, hv);
             _loaded = true;
           }
-          final values = _values;
-          final sum = values.fold<double>(0, (s, v) => s + v);
+          final mj = _effectiveMJ(hv);
+          final values = [for (final v in mj) v / hv];
+          final sumMJ = mj.fold<double>(0, (s, v) => s + v);
+          final sum = sumMJ / hv;
           final free = m.annualLimit - sum;
           final current = m.today.month - 1;
           // Gázév sorrend: augusztustól júliusig (naptári hónap indexek).
           final order = [for (final mo in m.yearMonths) mo.month - 1];
           return Column(
             children: [
-              BackHeader(title: 'Havi ajánlott értékek', subtitle: 'Gázév: augusztustól júliusig (m³)', onBack: _close),
+              BackHeader(title: 'Havi kedvezményes keret', subtitle: 'Jelleggörbe, augusztustól júliusig (m³)', onBack: _close),
               Expanded(
                 child: ListView(
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
@@ -81,11 +98,12 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text('Ajánlott összeg a gázévre', style: sans(13, color: AppColors.muted)),
+                                      Text('Havi keretek összesen', style: sans(13, color: AppColors.muted)),
                                       Text.rich(TextSpan(children: [
                                         TextSpan(text: Fmt.m3(sum), style: mono(34, letterSpacing: -1, height: 1.15)),
                                         TextSpan(text: ' m³', style: sans(14, color: AppColors.muted)),
                                       ])),
+                                      Text('${Fmt.m3(sumMJ)} MJ · ${Fmt.decimal(hv)} MJ/m³', style: sans(12, color: AppColors.muted)),
                                     ],
                                   ),
                                 ),
@@ -94,10 +112,13 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
                                   children: [
                                     Text('limit ${Fmt.m3(m.annualLimit)} m³', style: sans(12, color: AppColors.muted)),
                                     Text('havi átlag ${Fmt.m3(m.annualLimit / 12)} m³', style: sans(12, color: AppColors.muted)),
-                                    Text(
-                                      free >= 0 ? '${Fmt.m3(free)} m³ szabad keret' : '${Fmt.m3(-free)} m³-rel a limit felett',
-                                      style: sans(12, weight: FontWeight.w700, color: free >= 0 ? AppColors.accent : AppColors.warn),
-                                    ),
+                                    if (free.round() != 0)
+                                      Text(
+                                        free > 0 ? '${Fmt.m3(free)} m³-rel a limit alatt' : '${Fmt.m3(-free)} m³-rel a limit felett',
+                                        style: sans(12, weight: FontWeight.w700, color: free > 0 ? AppColors.accent : AppColors.warn),
+                                      )
+                                    else
+                                      Text('= az éves limit', style: sans(12, weight: FontWeight.w700, color: AppColors.accent)),
                                   ],
                                 ),
                               ],
@@ -144,9 +165,9 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
                     ),
                     Center(
                       child: TextButton(
-                        onPressed: () => setState(() => _fill(defaultMonthlyTargets)),
+                        onPressed: () => setState(() => _fill(defaultMonthlyKeretMJ, hv)),
                         style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
-                        child: Text('Alapértékek visszaállítása', style: sans(14, color: AppColors.muted)),
+                        child: Text('Hivatalos értékek visszaállítása', style: sans(14, color: AppColors.muted)),
                       ),
                     ),
                   ],
@@ -154,7 +175,7 @@ class _MonthlyScreenState extends ConsumerState<MonthlyScreen> {
               ),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                child: PrimaryButton(label: 'Mentés', onPressed: _save),
+                child: PrimaryButton(label: 'Mentés', onPressed: () => _save(hv)),
               ),
             ],
           );
@@ -192,7 +213,7 @@ class _MonthField extends StatelessWidget {
             width: 60,
             height: 44,
             child: Semantics(
-              label: '$name ajánlott értéke m³-ben',
+              label: '$name kedvezményes kerete m³-ben',
               child: TextField(
                 controller: controller,
                 onChanged: (_) => onChanged(),

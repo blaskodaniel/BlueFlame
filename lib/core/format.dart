@@ -26,6 +26,9 @@ abstract final class Fmt {
   /// Egységár, pl. `102 Ft/m³`; tizedes csak ha van.
   static String unitPrice(num v) => '${v == v.roundToDouble() ? _int.format(v) : _one.format(v)} Ft/m³';
 
+  /// Szám a szükséges tizedesekkel (legfeljebb 3), pl. `22,002` vagy `34,8`.
+  static String decimal(num v) => NumberFormat('#,##0.###', 'hu').format(v);
+
   /// Szorzó, pl. `7,3×`.
   static String times(double v) => '${_one.format(v)}×';
 

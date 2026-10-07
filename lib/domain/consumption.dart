@@ -18,8 +18,9 @@ class ConsumptionModel {
     required List<double> monthlyTargets,
     required this.annualLimit,
     required DateTime today,
+    this.heatingValue = defaultHeatingValue,
     this.discountPrice = defaultDiscountPrice,
-    this.marketPrice = defaultMarketPrice,
+    this.marketPrice = defaultMarketPriceMJ * defaultHeatingValue,
   })  : assert(monthlyTargets.length == 12),
         readings = [...readings]..sort((a, b) => a.day.compareTo(b.day)),
         monthlyTargets = List.unmodifiable(monthlyTargets),
@@ -38,10 +39,20 @@ class ConsumptionModel {
 
   final List<MeterReading> readings;
 
-  /// Naptári hónap szerint indexelve (0 = január).
+  /// A havi kedvezményes keret (jelleggörbe) m³-ben, naptári hónap szerint
+  /// indexelve (0 = január).
   final List<double> monthlyTargets;
+
+  /// Az éves kedvezményes keret m³-ben.
   final double annualLimit;
+
+  /// Fűtőérték, MJ/m³ (csak megjelenítéshez; a többi érték már m³-ben van).
+  final double heatingValue;
+
+  /// Ft/m³.
   final double discountPrice;
+
+  /// Ft/m³.
   final double marketPrice;
   final DateTime today;
   final Map<DateTime, double> _daily = {};
@@ -122,9 +133,6 @@ class ConsumptionModel {
   /// A gázévben eddig elfogyasztott mennyiség.
   double get yearUsed => dataEnd == null ? 0 : usedBetween(yearStart, dataEnd!);
 
-  /// A gázév elejétől `day` előtti napig elfogyasztott mennyiség (a költségszámításhoz).
-  double usedBeforeInYear(DateTime day) => day.isAfter(yearStart) ? usedBetween(yearStart, addDays(day, -1)) : 0;
-
   double get remaining => annualLimit - yearUsed;
 
   double get usedRatio => annualLimit <= 0 ? 0 : yearUsed / annualLimit;
@@ -159,25 +167,83 @@ class ConsumptionModel {
   }
 
   // ---------------------------------------------------------------------------
-  // Költség (kétsávos ár)
+  // Költség – havi diktálás
+  //
+  // Havi diktálásnál minden hónapnak saját kedvezményes kerete van (jelleggörbe):
+  // a havi keret feletti rész az adott havi számlán piaci áron szerepel. Az éves
+  // elszámoláskor a teljes gázév fogyasztását az éves kerethez mérik, és ha az
+  // éves szinten belefér, a havi számlákon kifizetett többlet visszajár.
   // ---------------------------------------------------------------------------
 
-  /// A gázévben eddig elfogyasztott gáz ára forintban.
+  /// Egy naptári hónap kedvezményes kerete m³-ben.
+  double keretFor(DateTime month) => monthlyTargets[month.month - 1];
+
+  /// Egy hónap számlája `used` m³ fogyasztásnál.
+  double monthBill(DateTime month, double used) => pricing.billFor(used, keretFor(month));
+
+  /// Egy hónapban a ténylegesen mért fogyasztás (az adatok végéig).
+  double usedInMonth(DateTime month) {
+    final end = dataEnd;
+    final start = DateTime(month.year, month.month);
+    if (end == null || end.isBefore(start)) return 0;
+    final last = DateTime(month.year, month.month, daysInMonth(month.year, month.month));
+    return usedBetween(start, end.isBefore(last) ? end : last);
+  }
+
+  /// Becsült kumulált fogyasztás a gázévben `day` napig; a gázév előtt 0.
+  double? _cumulative(DateTime day) => day.isBefore(yearStart) ? 0 : estimatedCumulative(day);
+
+  /// Egy hónap becsült teljes fogyasztása (múlt: tényleges, jövő: becslés).
+  double? estimatedUsedInMonth(DateTime month) {
+    final start = DateTime(month.year, month.month);
+    final end = _cumulative(DateTime(month.year, month.month, daysInMonth(month.year, month.month)));
+    final before = _cumulative(addDays(start, -1));
+    return end == null || before == null ? null : end - before;
+  }
+
+  /// A gázév havi számláinak összege eddig (az aktuális hónap eddigi részével).
+  double get billsSoFar => [
+        for (final m in yearMonths)
+          if (!m.isAfter(today)) monthBill(m, usedInMonth(m)),
+      ].fold(0.0, (s, v) => s + v);
+
+  /// A gázév összes havi számlájának becsült összege.
+  double? get estimatedBillsTotal {
+    if (dataEnd == null) return null;
+    var sum = 0.0;
+    for (final m in yearMonths) {
+      sum += monthBill(m, estimatedUsedInMonth(m)!);
+    }
+    return sum;
+  }
+
+  /// Az éves elszámolás szerinti költség eddig (az éves kerettel).
   double get costSoFar => pricing.costOf(yearUsed);
 
-  /// A gázév végéig becsült teljes költség.
+  /// Az éves elszámolás szerinti becsült költség a gázév végére.
   double? get estimatedCost {
     final e = estimatedYearEnd;
     return e == null ? null : pricing.costOf(e);
   }
 
-  /// A becslés szerint a keret fölé eső mennyiség (0, ha belefér).
+  /// Az éves elszámoláskor várhatóan visszajáró összeg eddig: a havi
+  /// számlákon piaci áron fizetett, de az éves keretbe még beleférő rész.
+  double get refundSoFar => (billsSoFar - costSoFar).clamp(0, double.infinity).toDouble();
+
+  /// A gázév végére becsült visszatérítés az éves elszámoláskor.
+  double? get estimatedRefund {
+    final bills = estimatedBillsTotal;
+    final settled = estimatedCost;
+    return bills == null || settled == null ? null : (bills - settled).clamp(0, double.infinity).toDouble();
+  }
+
+  /// A becslés szerint az éves keret fölé eső mennyiség (0, ha belefér).
   double? get estimatedOverLimit {
     final e = estimatedYearEnd;
     return e == null ? null : (e - annualLimit).clamp(0, double.infinity).toDouble();
   }
 
-  /// Mennyivel kerül többe a keret feletti rész, mintha kedvezményes áron lenne.
+  /// Mennyivel kerül többe az éves keret feletti rész, mintha kedvezményes áron lenne.
   double? get estimatedExtraCost {
     final over = estimatedOverLimit;
     return over == null ? null : over * (marketPrice - discountPrice);
@@ -191,34 +257,79 @@ class ConsumptionModel {
 
   DateTime get monthEnd => DateTime(today.year, today.month, daysInMonth(today.year, today.month));
 
-  /// A gázévben a hónap előtt elfogyasztott mennyiség; ebből tudjuk, melyik
-  /// ársávban kezdődik a hónap.
-  double get _usedBeforeMonth =>
-      monthStart.isAfter(yearStart) ? (estimatedCumulative(addDays(monthStart, -1)) ?? usedBeforeInYear(monthStart)) : 0;
+  /// Az aktuális hónap kedvezményes kerete m³-ben.
+  double get monthKeret => keretFor(monthStart);
 
   /// Az aktuális hónapban eddig elfogyasztott mennyiség.
-  double get monthUsed {
-    final end = dataEnd;
-    return end == null || end.isBefore(monthStart) ? 0 : usedBetween(monthStart, end);
-  }
+  double get monthUsed => usedInMonth(monthStart);
 
-  /// Az aktuális hónap eddigi költsége (az árlépcsőt is figyelembe véve).
-  double get monthCostSoFar => pricing.costOfNext(_usedBeforeMonth, monthUsed);
+  /// Az aktuális havi számla eddig.
+  double get monthCostSoFar => monthBill(monthStart, monthUsed);
 
   /// Becsült fogyasztás a teljes aktuális hónapra.
-  double? get estimatedMonthUsed {
-    final e = estimatedCumulative(monthEnd);
-    return e == null ? null : e - _usedBeforeMonth;
-  }
+  double? get estimatedMonthUsed => estimatedUsedInMonth(monthStart);
 
-  /// Becsült költség a hónap végéig.
+  /// Becsült havi számla a hónap végéig.
   double? get estimatedMonthCost {
     final used = estimatedMonthUsed;
-    return used == null ? null : pricing.costOfNext(_usedBeforeMonth, used);
+    return used == null ? null : monthBill(monthStart, used);
   }
 
-  /// Igaz, ha a becslés szerint a hónapban (részben) már piaci áron fogy a gáz.
-  bool get monthReachesMarketPrice => _usedBeforeMonth + (estimatedMonthUsed ?? monthUsed) > annualLimit;
+  /// A becslés szerint a havi keret fölé eső mennyiség (0, ha belefér).
+  double get estimatedMonthOver => ((estimatedMonthUsed ?? monthUsed) - monthKeret).clamp(0, double.infinity).toDouble();
+
+  /// Igaz, ha a becslés szerint a hónapban a havi keret felett, piaci áron is fogy gáz.
+  bool get monthReachesMarketPrice => estimatedMonthOver > 0;
+
+  /// A lezárt hónapokban fel nem használt (megmaradt) keret m³-ben: a követett
+  /// napokra jutó havi keret mínusz a tényleges fogyasztás, az előző hónap
+  /// végéig. Negatív, ha a lezárt hónapokban összesen a keret felett fogyott.
+  ///
+  /// Havi diktálásnál ezt a mennyiséget egy későbbi, hidegebb hónapban a havi
+  /// keret felett is el lehet fogyasztani: a havi számlán ugyan piaci áron
+  /// szerepel, de az éves elszámoláskor kedvezményes áron számolják el.
+  double get savedKeret {
+    final start = trackedStart;
+    final data = dataEnd;
+    if (start == null || data == null) return 0;
+    final lastClosed = addDays(monthStart, -1);
+    final end = data.isBefore(lastClosed) ? data : lastClosed;
+    var sum = 0.0;
+    for (var d = start; !d.isAfter(end); d = addDays(d, 1)) {
+      sum += recommendedOn(d) - (_daily[d] ?? 0);
+    }
+    return sum;
+  }
+
+  /// Van-e már legalább részben követett, lezárt hónap a gázévben.
+  bool get hasClosedTrackedMonth {
+    final start = trackedStart;
+    return start != null && start.isBefore(monthStart);
+  }
+
+  /// Ennyinél kellene tartani ma a havi keretek szerint (a gyűrű fehér jelölője).
+  double get recommendedToDate => recommendedCumulative(today);
+
+  /// A hónap keretéből a mai nappal bezárólag eltelt napokra jutó rész.
+  double get monthKeretToDate => monthKeret * today.day / monthEnd.day;
+
+  /// Az aktuális hónap keretéből elfogyasztott arány (1 felett: túllépés).
+  double get monthUsedRatio => monthKeret <= 0 ? 0 : monthUsed / monthKeret;
+
+  /// A `day` napig tartó, `prev` utáni leolvasási időszak `amount` m³-ének ára
+  /// a havi számlán: a nap hónapjában korábban mért fogyasztás után következik.
+  double readingCost(DateTime prev, DateTime day, double amount) {
+    final month = DateTime(day.year, day.month);
+    final before = prev.isBefore(month) ? 0.0 : usedBetween(month, prev);
+    return monthBill(month, before + amount) - monthBill(month, before);
+  }
+
+  /// A `day` napi leolvasás hónapjában a `prev` utáni `amount` m³-ből mennyi esik a havi keret fölé.
+  double readingOverKeret(DateTime prev, DateTime day, double amount) {
+    final month = DateTime(day.year, day.month);
+    final before = prev.isBefore(month) ? 0.0 : usedBetween(month, prev);
+    return (before + amount - keretFor(month)).clamp(0.0, amount).toDouble();
+  }
 
   // ---------------------------------------------------------------------------
   // Bontások a diagramokhoz

@@ -157,7 +157,7 @@ class _PeriodChart extends StatelessWidget {
       case _Period.week || _Period.month:
         final days = model.lastDays(period == _Period.week ? 7 : 30);
         final labelled = UsageBars.labelledIndices([for (final d in days) d.used]);
-        title = 'Napi fogyasztás';
+        title = period == _Period.week ? 'Elmúlt 7 nap, naponta' : 'Elmúlt 30 nap, naponta';
         bars = [
           for (var i = 0; i < days.length; i++)
             BarDatum(
@@ -173,7 +173,7 @@ class _PeriodChart extends StatelessWidget {
       case _Period.year:
         final weeks = model.weeklyUsageThisYear();
         final labelled = UsageBars.labelledIndices([for (final w in weeks) w.used]);
-        title = 'Heti fogyasztás';
+        title = 'Gázév, hetente';
         bars = [
           for (var i = 0; i < weeks.length; i++)
             BarDatum(
@@ -192,7 +192,7 @@ class _PeriodChart extends StatelessWidget {
       child: Column(
         children: [
           _CardHeader(title: title, legend: [
-            const LegendItem(swatch: DashedLine(color: AppColors.text), label: 'ajánlott'),
+            const LegendItem(swatch: DashedLine(color: AppColors.text), label: 'napi keret'),
             LegendItem(
               swatch: Container(width: 8, height: 8, decoration: BoxDecoration(color: AppColors.warn, borderRadius: BorderRadius.circular(2))),
               label: 'felette',
@@ -251,11 +251,16 @@ class _MonthlyChart extends StatelessWidget {
       child: Column(
         children: [
           _CardHeader(title: 'Havi fogyasztás (gázév)', legend: [
-            LegendItem(swatch: Container(width: 14, height: 2, color: AppColors.text), label: 'ajánlott · m³'),
+            LegendItem(swatch: Container(width: 14, height: 2, color: AppColors.text), label: 'havi keret'),
           ]),
-          const SizedBox(height: 14),
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('felül: elfogyasztott / havi keret, m³', style: sans(11, color: AppColors.muted)),
+          ),
+          const SizedBox(height: 10),
           UsageBars(
-            height: 140,
+            height: 156,
             gap: 6,
             radius: 6,
             solidRecommended: true,
@@ -269,6 +274,7 @@ class _MonthlyChart extends StatelessWidget {
                   recommended: used[i].recommended,
                   label: Fmt.monthShort[used[i].month.month - 1],
                   valueLabel: Fmt.m3(used[i].used),
+                  valueSubLabel: '/${Fmt.m3(used[i].recommended)}',
                   highlight: i == used.length - 1,
                 ),
             ],

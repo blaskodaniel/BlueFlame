@@ -2,11 +2,16 @@ import 'package:blueflame/domain/consumption.dart';
 import 'package:blueflame/domain/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+/// Egyszerű, kerek havi keretek (m³) a számításokhoz: jan–dec, összesen 1 710.
+const testTargets = <double>[320, 290, 220, 125, 60, 30, 25, 25, 65, 140, 190, 220];
+
 ConsumptionModel model(List<(DateTime, double)> readings, {DateTime? today, double limit = 1729}) => ConsumptionModel(
       readings: [for (final (d, v) in readings) MeterReading(day: d, value: v)],
-      monthlyTargets: defaultMonthlyTargets,
+      monthlyTargets: testTargets,
       annualLimit: limit,
       today: today ?? DateTime(2026, 10, 4),
+      discountPrice: 102,
+      marketPrice: 747,
     );
 
 void main() {
@@ -116,9 +121,9 @@ void main() {
   });
 
   group('pricing', () {
-    const p = GasPricing();
+    const p = GasPricing(limit: 1729, discountPrice: 102, marketPrice: 747);
 
-    test('discounted price up to the limit, market price above', () {
+    test('annual settlement: discounted up to the limit, market price above', () {
       expect(p.costOf(0), 0);
       expect(p.costOf(100), 100 * 102);
       expect(p.costOf(1729), 1729 * 102);
@@ -126,25 +131,28 @@ void main() {
       expect(p.multiplier, closeTo(7.32, .01));
     });
 
-    test('cost of the next amount straddling the limit', () {
-      expect(p.costOfNext(1720, 10), 9 * 102 + 1 * 747);
-      expect(p.costOfNext(1800, 5), 5 * 747);
+    test('a monthly bill uses the month keret', () {
+      expect(p.billFor(100, 107), 100 * 102);
+      expect(p.billFor(150, 107), 107 * 102 + 43 * 747);
     });
 
-    test('model cost and over-limit estimate', () {
-      // Okt. 1–4.: napi 20 m³, ami jóval az ajánlott felett van.
+    test('annual over-limit estimate', () {
+      // Okt. 1–4.: napi 20 m³, ami jóval a keret felett van.
       final m = model([(DateTime(2026, 9, 30), 0), (DateTime(2026, 10, 4), 80)]);
       expect(m.costSoFar, 80 * 102);
       expect(m.estimatedOverLimit, greaterThan(0));
       expect(m.estimatedExtraCost, closeTo(m.estimatedOverLimit! * (747 - 102), 1e-6));
       expect(m.estimatedCost, closeTo(p.costOf(m.estimatedYearEnd!), 1e-6));
     });
+  });
 
-    test('current month cost so far and estimate', () {
-      // Okt. 1–4.: napi 2 m³ → 8 m³ eddig, kedvezményes áron.
+  group('monthly reading (havi diktálás)', () {
+    test('current month within its keret is billed at the discounted price', () {
+      // Okt. 1–4.: napi 2 m³ → 8 m³, az októberi keret 140 m³.
       final m = model([(DateTime(2026, 9, 30), 0), (DateTime(2026, 10, 4), 8)]);
       expect(m.monthStart, DateTime(2026, 10));
       expect(m.monthEnd, DateTime(2026, 10, 31));
+      expect(m.monthKeret, 140);
       expect(m.monthUsed, closeTo(8, 1e-9));
       expect(m.monthCostSoFar, closeTo(8 * 102, 1e-6));
       final estUsed = m.estimatedCumulative(DateTime(2026, 10, 31))!;
@@ -153,12 +161,61 @@ void main() {
       expect(m.monthReachesMarketPrice, isFalse);
     });
 
-    test('month cost switches to market price above the limit', () {
-      // Szept. 30-ig 1 725 m³ (aug. 1-jétől), okt. 1–4. további 8 m³: 4 m³ még kedvezményes.
-      final m = model([(DateTime(2026, 7, 31), 0), (DateTime(2026, 9, 30), 1725), (DateTime(2026, 10, 4), 1733)]);
-      expect(m.monthUsed, closeTo(8, 1e-9));
-      expect(m.monthCostSoFar, closeTo(4 * 102 + 4 * 747, 1e-6));
+    test('above the month keret the bill uses the market price, refunded at settlement', () {
+      // Okt. 1–4.: 200 m³ a 140 m³-es októberi keret mellett.
+      final m = model([(DateTime(2026, 9, 30), 0), (DateTime(2026, 10, 4), 200)]);
+      expect(m.monthCostSoFar, closeTo(140 * 102 + 60 * 747, 1e-6));
       expect(m.monthReachesMarketPrice, isTrue);
+      // Éves szinten (1 729 m³) bőven belefér: az éves elszámolás mindent kedvezményesen számol.
+      expect(m.costSoFar, closeTo(200 * 102, 1e-6));
+      expect(m.refundSoFar, closeTo(60 * (747 - 102), 1e-6));
+    });
+
+    test('bills add up month by month across the gas year', () {
+      // Aug.: 50 m³ (keret 25), szept.: 65 m³ (keret 65), okt. 1–4.: 8 m³.
+      final m = model([
+        (DateTime(2026, 7, 31), 0),
+        (DateTime(2026, 8, 31), 50),
+        (DateTime(2026, 9, 30), 115),
+        (DateTime(2026, 10, 4), 123),
+      ]);
+      expect(m.usedInMonth(DateTime(2026, 8)), closeTo(50, 1e-9));
+      expect(m.usedInMonth(DateTime(2026, 9)), closeTo(65, 1e-9));
+      expect(m.billsSoFar, closeTo((25 * 102 + 25 * 747) + 65 * 102 + 8 * 102, 1e-6));
+      expect(m.costSoFar, closeTo(123 * 102, 1e-6));
+      expect(m.refundSoFar, closeTo(25 * (747 - 102), 1e-6));
+      expect(m.estimatedBillsTotal, greaterThanOrEqualTo(m.estimatedCost!));
+      expect(m.estimatedRefund, greaterThanOrEqualTo(0));
+    });
+
+    test('estimated month usage of past months equals the measured usage', () {
+      final m = model([(DateTime(2026, 7, 31), 0), (DateTime(2026, 8, 31), 50), (DateTime(2026, 10, 4), 120)]);
+      expect(m.estimatedUsedInMonth(DateTime(2026, 8)), closeTo(50, 1e-9));
+    });
+
+    test('a reading is priced against what the month has already used', () {
+      // Okt. 1–2.: 130 m³, okt. 3–4.: további 20 m³ → 10 m³ még a 140-es kereten belül.
+      final m = model([(DateTime(2026, 9, 30), 0), (DateTime(2026, 10, 2), 130), (DateTime(2026, 10, 4), 150)]);
+      expect(m.readingCost(DateTime(2026, 10, 2), DateTime(2026, 10, 4), 20), closeTo(10 * 102 + 10 * 747, 1e-6));
+      expect(m.readingOverKeret(DateTime(2026, 10, 2), DateTime(2026, 10, 4), 20), closeTo(10, 1e-9));
+    });
+
+    test('saved keret counts only tracked days of closed months', () {
+      // Szept. 15-től követett; szept. 15–30.: 16 nap × (65/30) keret, 20 m³ fogyott.
+      final m = model([(DateTime(2026, 9, 14), 0), (DateTime(2026, 9, 30), 20), (DateTime(2026, 10, 4), 30)]);
+      expect(m.hasClosedTrackedMonth, isTrue);
+      expect(m.savedKeret, closeTo(16 * 65 / 30 - 20, 1e-9));
+    });
+
+    test('saved keret is negative after an over-keret month', () {
+      final m = model([(DateTime(2026, 8, 31), 0), (DateTime(2026, 9, 30), 100), (DateTime(2026, 10, 4), 110)]);
+      expect(m.savedKeret, closeTo(65 - 100, 1e-9));
+    });
+
+    test('no closed tracked month yet: nothing saved', () {
+      final m = model([(DateTime(2026, 10, 1), 0), (DateTime(2026, 10, 4), 10)]);
+      expect(m.hasClosedTrackedMonth, isFalse);
+      expect(m.savedKeret, 0);
     });
 
     test('no data this month: zero so far, estimate from the pace', () {
@@ -167,12 +224,31 @@ void main() {
       expect(m.monthCostSoFar, 0);
       expect(m.estimatedMonthUsed, greaterThan(0));
     });
+  });
 
-    test('settings provide the configured prices', () {
-      final s = AppSettings.fromMap({AppSettings.kDiscountPrice: '110', AppSettings.kMarketPrice: '800.5'});
+  group('settings and official keret', () {
+    test('the official monthly keret adds up to the annual limit', () {
+      expect(defaultMonthlyKeretMJ.fold<double>(0, (s, v) => s + v), defaultAnnualLimitMJ);
+    });
+
+    test('MJ values are converted with the heating value', () {
+      const d = AppSettings();
+      expect(d.annualLimit, closeTo(63645 / 34.8, 1e-9));
+      expect(d.marketPrice, closeTo(22.002 * 34.8, 1e-9));
+      final s = AppSettings.fromMap({
+        AppSettings.kHeatingValue: '36',
+        AppSettings.kDiscountPrice: '110',
+        AppSettings.kMarketPriceMJ: '25',
+      });
+      expect(s.annualLimit, closeTo(63645 / 36, 1e-9));
       expect(s.pricing.discountPrice, 110);
-      expect(s.pricing.marketPrice, 800.5);
-      expect(s.pricing.limit, 1729);
+      expect(s.pricing.marketPrice, closeTo(25 * 36, 1e-9));
+    });
+
+    test('invalid stored numbers fall back to the defaults', () {
+      final s = AppSettings.fromMap({AppSettings.kHeatingValue: '0', AppSettings.kAnnualLimitMJ: 'abc'});
+      expect(s.heatingValue, 34.8);
+      expect(s.annualLimitMJ, 63645);
     });
   });
 }

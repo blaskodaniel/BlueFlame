@@ -28,7 +28,7 @@ class GasRepository {
 
   Stream<List<double>> watchMonthlyTargets() {
     return _db.select(_db.monthlyTargets).watch().map((rows) {
-      final values = [...defaultMonthlyTargets];
+      final values = [...defaultMonthlyKeretMJ];
       for (final r in rows) {
         if (r.month >= 1 && r.month <= 12) values[r.month - 1] = r.value;
       }
@@ -36,6 +36,7 @@ class GasRepository {
     });
   }
 
+  /// Havi kedvezményes keret mentése MJ-ben (naptári hónap szerint, 0 = január).
   Future<void> saveMonthlyTargets(List<double> values) {
     return _db.batch((b) {
       b.insertAllOnConflictUpdate(_db.monthlyTargets, [

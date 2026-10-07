@@ -41,6 +41,11 @@ class LimitScreen extends StatelessWidget {
                           Text(Fmt.m3(limit), textAlign: TextAlign.center, style: mono(46, letterSpacing: -1.5, height: 1)),
                           const SizedBox(height: 4),
                           Text('m³ / gázév · havi átlag ${Fmt.m3(limit / 12)} m³', textAlign: TextAlign.center, style: sans(13, color: AppColors.muted)),
+                          Text(
+                            '${Fmt.m3(limit * m.heatingValue)} MJ · ${Fmt.m3One(m.heatingValue)} MJ/m³ fűtőértékkel',
+                            textAlign: TextAlign.center,
+                            style: sans(12, color: AppColors.muted),
+                          ),
                           const SizedBox(height: 4),
                           TextButton.icon(
                             onPressed: () => context.go('/beallitasok'),
@@ -75,7 +80,7 @@ class LimitScreen extends StatelessWidget {
                             children: [
                               LegendItem(swatch: Container(width: 14, height: 3, decoration: BoxDecoration(color: AppColors.accent, borderRadius: BorderRadius.circular(2))), label: 'Eddig'),
                               const LegendItem(swatch: DashedLine(color: AppColors.accent, thickness: 3, dash: 2, gap: 3), label: 'Becslés'),
-                              const LegendItem(swatch: DashedLine(color: AppColors.text), label: 'Ajánlott'),
+                              const LegendItem(swatch: DashedLine(color: AppColors.text), label: 'Havi keretek'),
                               const LegendItem(swatch: DashedLine(color: AppColors.warn), label: 'Limit'),
                             ],
                           ),
@@ -93,7 +98,7 @@ class LimitScreen extends StatelessWidget {
                             label: 'Becsült gázév vége',
                             value: estimate == null ? '—' : '~${Fmt.m3(estimate)}',
                             unit: 'm³',
-                            footer: 'az ajánlott arányok szerint',
+                            footer: 'a havi keretek arányában',
                             valueSize: 22,
                           ),
                         ),
@@ -116,32 +121,6 @@ class LimitScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Rise(delayMs: 420, child: _PriceCard(model: m)),
-                  const SizedBox(height: 12),
-                  Rise(
-                    delayMs: 460,
-                    child: Material(
-                      color: AppColors.surface1,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: AppColors.line)),
-                      clipBehavior: Clip.antiAlias,
-                      child: InkWell(
-                        onTap: () => context.push('/havi-ertekek'),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: SizedBox(
-                            height: 52,
-                            child: Row(
-                              children: [
-                                Expanded(child: Text('Havi ajánlott értékek', style: sans(15, weight: FontWeight.w700))),
-                                Text('${Fmt.m3(m.monthlyTargetSum)} m³', style: mono(14, weight: FontWeight.w400, color: AppColors.accent)),
-                                const SizedBox(width: 6),
-                                const Icon(Icons.chevron_right_rounded, color: AppColors.accent, size: 20),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -254,32 +233,45 @@ class _PriceCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text('felette · ${Fmt.times(pricing.multiplier)}', style: sans(12, color: AppColors.muted)),
-                    Text(Fmt.unitPrice(m.marketPrice), style: mono(15, color: AppColors.warn)),
+                    Text('~${Fmt.unitPrice(m.marketPrice)}', style: mono(15, color: AppColors.warn)),
                   ],
                 ),
               ),
             ],
           ),
           const Divider(height: 24, color: AppColors.line),
-          Text(Fmt.monthNames[m.today.month - 1], style: sans(12, weight: FontWeight.w700, color: AppColors.muted)),
+          Text(
+            '${Fmt.monthNames[m.today.month - 1]} · havi keret ${Fmt.m3(m.monthKeret)} m³',
+            style: sans(12, weight: FontWeight.w700, color: AppColors.muted),
+          ),
           const SizedBox(height: 6),
-          _CostRow(label: 'Eddigi költség a hónapban', value: Fmt.ft(m.monthCostSoFar)),
+          _CostRow(label: 'Havi számla eddig', value: Fmt.ft(m.monthCostSoFar)),
           const SizedBox(height: 6),
           _CostRow(
-            label: 'Becsült költség a hónap végéig',
+            label: 'Becsült havi számla',
             value: m.estimatedMonthCost == null ? '—' : '~${Fmt.ft(m.estimatedMonthCost!)}',
             color: m.monthReachesMarketPrice ? AppColors.warn : AppColors.accent,
           ),
           const SizedBox(height: 14),
           Text('Gázév', style: sans(12, weight: FontWeight.w700, color: AppColors.muted)),
           const SizedBox(height: 6),
-          _CostRow(label: 'Eddigi költség a gázévben', value: Fmt.ft(pricing.costOf(m.yearUsed))),
+          _CostRow(label: 'Havi számlák eddig', value: Fmt.ft(m.billsSoFar)),
           const SizedBox(height: 6),
           _CostRow(
-            label: 'Becsült költség a gázév végéig',
+            label: 'Havi számlák becsült összege',
+            value: m.estimatedBillsTotal == null ? '—' : '~${Fmt.ft(m.estimatedBillsTotal!)}',
+            color: over > 0 ? AppColors.warn : AppColors.accent,
+          ),
+          const SizedBox(height: 6),
+          _CostRow(
+            label: 'Éves elszámolás után',
             value: est == null ? '—' : '~${Fmt.ft(pricing.costOf(est))}',
             color: over > 0 ? AppColors.warn : AppColors.accent,
           ),
+          if ((m.estimatedRefund ?? 0) > 0) ...[
+            const SizedBox(height: 6),
+            _CostRow(label: 'Várható visszatérítés', value: '~${Fmt.ft(m.estimatedRefund!)}'),
+          ],
           if (over > 0) ...[
             const SizedBox(height: 6),
             _CostRow(

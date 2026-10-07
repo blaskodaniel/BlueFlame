@@ -1,9 +1,14 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../data/export.dart';
 import '../../domain/models.dart';
 import '../../providers.dart';
 import '../widgets/common.dart';
@@ -19,17 +24,6 @@ class SettingsScreen extends ConsumerWidget {
     final repo = ref.read(repositoryProvider);
     void set(String key, Object value) => repo.setSetting(key, value);
 
-    Future<void> pickTime() async {
-      final t = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay(hour: settings.reminderMinutes ~/ 60, minute: settings.reminderMinutes % 60),
-        helpText: 'Emlékeztető időpontja',
-      );
-      if (t != null) set(AppSettings.kReminderMinutes, t.hour * 60 + t.minute);
-    }
-
-    final time = '${(settings.reminderMinutes ~/ 60).toString().padLeft(2, '0')}:${(settings.reminderMinutes % 60).toString().padLeft(2, '0')}';
-
     return SafeArea(
       bottom: false,
       child: ListView(
@@ -44,25 +38,36 @@ class SettingsScreen extends ConsumerWidget {
                 const SectionLabel('Gázóra'),
                 Rise(
                   child: _Group(children: [
-                    _Row(title: 'Mértékegység', trailing: Text('m³', style: mono(14, weight: FontWeight.w400, color: AppColors.muted))),
                     _Row(
-                      title: 'Éves limit',
-                      subtitle: 'Kedvezményes keret egy gázévre',
+                      title: 'Fűtőérték',
+                      subtitle: 'A szolgáltató gázminőség-oldalán',
                       onTap: () => _editNumber(
                         context,
-                        'Éves limit (kedvezményes keret)',
-                        settings.annualLimit,
-                        suffix: 'm³',
+                        'Fűtőérték',
+                        settings.heatingValue,
+                        suffix: 'MJ/m³',
+                        onSave: (v) => set(AppSettings.kHeatingValue, v),
+                      ),
+                      trailing: _Chevron(text: '${Fmt.m3One(settings.heatingValue)} MJ/m³'),
+                    ),
+                    _Row(
+                      title: 'Éves limit',
+                      subtitle: 'Kedvezményes keret · ${Fmt.m3(settings.annualLimitMJ)} MJ',
+                      onTap: () => _editNumber(
+                        context,
+                        'Éves kedvezményes keret',
+                        settings.annualLimitMJ,
+                        suffix: 'MJ',
                         integer: true,
-                        onSave: (v) => set(AppSettings.kAnnualLimit, v),
+                        onSave: (v) => set(AppSettings.kAnnualLimitMJ, v),
                       ),
                       trailing: _Chevron(text: '${Fmt.m3(settings.annualLimit)} m³'),
                     ),
                     _Row(
-                      title: 'Havi ajánlott értékek',
-                      subtitle: 'Augusztustól júliusig',
+                      title: 'Havi kedvezményes keret',
+                      subtitle: 'Jelleggörbe, augusztustól júliusig',
                       onTap: () => context.push('/havi-ertekek'),
-                      trailing: _Chevron(text: targetSum == null ? null : '${Fmt.m3(targetSum)} m³'),
+                      trailing: _Chevron(text: targetSum == null ? null : '${Fmt.m3(targetSum / settings.heatingValue)} m³'),
                     ),
                   ]),
                 ),
@@ -78,52 +83,43 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                     _Row(
                       title: 'Piaci ár',
-                      subtitle: 'A keret felett · ${Fmt.times(settings.pricing.multiplier)}',
-                      onTap: () => _editNumber(context, 'Piaci ár', settings.marketPrice, suffix: 'Ft/m³', onSave: (v) => set(AppSettings.kMarketPrice, v)),
-                      trailing: _Chevron(text: Fmt.unitPrice(settings.marketPrice), color: AppColors.warn),
+                      subtitle: 'A keret felett · ~${Fmt.unitPrice(settings.marketPrice)} · ${Fmt.times(settings.pricing.multiplier)}',
+                      onTap: () => _editNumber(
+                        context,
+                        'Piaci ár',
+                        settings.marketPriceMJ,
+                        suffix: 'Ft/MJ',
+                        onSave: (v) => set(AppSettings.kMarketPriceMJ, v),
+                      ),
+                      trailing: _Chevron(text: '${Fmt.decimal(settings.marketPriceMJ)} Ft/MJ', color: AppColors.warn),
                     ),
                   ]),
                 ),
-                const SectionLabel('Emlékeztetők'),
+                const SectionLabel('Adatok'),
                 Rise(
                   delayMs: 100,
                   child: _Group(children: [
                     _Row(
-                      title: 'Napi leolvasás',
-                      subtitle: 'Minden nap $time',
-                      onTap: pickTime,
-                      trailing: PillToggle(
-                        label: 'Napi leolvasás emlékeztető',
-                        value: settings.dailyReminder,
-                        onChanged: (v) => set(AppSettings.kDailyReminder, v),
-                      ),
+                      title: 'Leolvasások exportálása (CSV)',
+                      subtitle: 'Táblázatkezelőben megnyitható',
+                      onTap: () => _export(context, ref, csv: true),
+                      trailing: const Icon(Icons.file_download_outlined, size: 20, color: AppColors.accent),
                     ),
                     _Row(
-                      title: 'Limit 80%-os elérésekor',
-                      trailing: PillToggle(label: 'Értesítés 80%-nál', value: settings.notifyAt80, onChanged: (v) => set(AppSettings.kNotifyAt80, v)),
-                    ),
-                    _Row(
-                      title: 'Limit 95%-os elérésekor',
-                      trailing: PillToggle(label: 'Értesítés 95%-nál', value: settings.notifyAt95, onChanged: (v) => set(AppSettings.kNotifyAt95, v)),
-                    ),
-                    _Row(
-                      title: 'Heti összefoglaló',
-                      trailing: PillToggle(label: 'Heti összefoglaló', value: settings.weeklySummary, onChanged: (v) => set(AppSettings.kWeeklySummary, v)),
+                      title: 'Biztonsági mentés (JSON)',
+                      subtitle: 'Leolvasások, beállítások és havi keretek',
+                      onTap: () => _export(context, ref, csv: false),
+                      trailing: const Icon(Icons.save_alt_rounded, size: 20, color: AppColors.accent),
                     ),
                   ]),
                 ),
-                const SectionLabel('Megjelenés és adatok'),
+                const SectionLabel('Megjelenés'),
                 Rise(
-                  delayMs: 200,
+                  delayMs: 150,
                   child: _Group(children: [
                     _Row(
                       title: 'Animációk',
                       trailing: PillToggle(label: 'Animációk', value: settings.animations, onChanged: (v) => set(AppSettings.kAnimations, v)),
-                    ),
-                    _Row(
-                      title: 'Adatok exportálása (CSV)',
-                      onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('A CSV-export hamarosan érkezik.'))),
-                      trailing: const _Chevron(),
                     ),
                   ]),
                 ),
@@ -138,6 +134,45 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+/// Export: összeállítja a fájlt, és a rendszer mentési ablakával megkérdezi,
+/// hová mentse a felhasználó.
+Future<void> _export(BuildContext context, WidgetRef ref, {required bool csv}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final repo = ref.read(repositoryProvider);
+  final now = DateTime.now();
+  final readings = await repo.watchReadings().first;
+  final String content;
+  final String fileName;
+  final String mimeType;
+  if (csv) {
+    content = buildReadingsCsv(readings);
+    fileName = exportFileName('leolvasasok', 'csv', now);
+    mimeType = 'text/csv';
+  } else {
+    content = buildBackupJson(
+      readings: readings,
+      settings: await repo.watchSettings().first,
+      monthlyKeretMJ: await repo.watchMonthlyTargets().first,
+      appVersion: ref.read(appVersionProvider).value ?? '',
+      exportedAt: now,
+    );
+    fileName = exportFileName('mentes', 'json', now);
+    mimeType = 'application/json';
+  }
+  try {
+    final uri = await FilePicker.saveFile(
+      fileName: fileName,
+      bytes: Uint8List.fromList(utf8.encode(content)),
+      mimeType: mimeType,
+      dialogTitle: 'Hová mentsem?',
+    );
+    if (uri == null) return; // A felhasználó megszakította.
+    messenger.showSnackBar(SnackBar(content: Text('Mentve: $fileName (${readings.length} leolvasás)')));
+  } catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text('A mentés nem sikerült: $e')));
   }
 }
 

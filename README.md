@@ -18,11 +18,12 @@ Az alkalmazás használatával könyebben tudod nyomonkövetni a gázfogyasztás
 ebből kiszámolja:
 
 - **mennyi fogyott a gázévben**, és ez a kedvezményes keret hány százaléka;
-- **hol kellene tartanod** a havi ajánlott értékek alapján (ajánlott ütem);
-- **mennyi lesz a gázév végére** a mostani tempóval, és belefér-e a keretbe;
-- **mennyibe kerül**: eddigi és becsült gázköltség, és ha a becslés túllépi a keretet,
-  mekkora többletköltséggel jár;
-- **mely napokon és hónapokban** fogyott több az ajánlottnál.
+- **hol tartasz a hónap kedvezményes keretéhez képest** (hivatalos jelleggörbe), és a hónap
+  végére belefér-e;
+- **mennyi lesz a gázév végére** a mostani tempóval, és belefér-e az éves keretbe;
+- **mennyibe kerül** havi diktálásnál: a havi számla, a gázév számláinak összege és az éves
+  elszámolás utáni összeg, a várható visszatérítéssel;
+- **mely napokon és hónapokban** fogyott több a keretnél.
 
 Minden adat a telefonon marad (SQLite adatbázisban), nincs regisztráció és nincs szerver.
 
@@ -30,19 +31,19 @@ Minden adat a telefonon marad (SQLite adatbázisban), nincs regisztráció és n
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/fooldal.png" width="220" alt="Főoldal"><br><b>Főoldal</b><br><sub>Kedvezményes keret, ajánlott ütem, gázköltség</sub></td>
+    <td align="center"><img src="docs/screenshots/fooldal.png" width="220" alt="Főoldal"><br><b>Főoldal</b><br><sub>Két gyűrű: gázév és aktuális hónap a kerethez képest</sub></td>
+    <td align="center"><img src="docs/screenshots/fooldal-koltseg.png" width="220" alt="Gázköltség"><br><b>Gázköltség</b><br><sub>Havi keret, megmaradt keret, havi számla</sub></td>
     <td align="center"><img src="docs/screenshots/rogzites.png" width="220" alt="Állás rögzítése"><br><b>Állás rögzítése</b><br><sub>Számjegyenkénti bevitel, fogyasztás és ára</sub></td>
-    <td align="center"><img src="docs/screenshots/statisztika.png" width="220" alt="Statisztika"><br><b>Statisztika</b><br><sub>Napi és havi bontás, ajánlott szinttel</sub></td>
   </tr>
   <tr>
+    <td align="center"><img src="docs/screenshots/statisztika.png" width="220" alt="Statisztika"><br><b>Statisztika</b><br><sub>Napi és havi bontás, a havi kerettel</sub></td>
     <td align="center"><img src="docs/screenshots/limit.png" width="220" alt="Éves limit"><br><b>Éves limit</b><br><sub>Keret, várható alakulás a gázévben</sub></td>
-    <td align="center"><img src="docs/screenshots/limit-gazar.png" width="220" alt="Gázár"><br><b>Gázár</b><br><sub>Árlépcső, eddigi és becsült költség</sub></td>
-    <td align="center"><img src="docs/screenshots/havi.png" width="220" alt="Havi ajánlott értékek"><br><b>Havi ajánlott értékek</b><br><sub>Augusztustól júliusig, szerkeszthető</sub></td>
+    <td align="center"><img src="docs/screenshots/limit-gazar.png" width="220" alt="Gázár"><br><b>Gázár</b><br><sub>Árlépcső, havi számlák, éves elszámolás</sub></td>
   </tr>
   <tr>
+    <td align="center"><img src="docs/screenshots/havi.png" width="220" alt="Havi kedvezményes keret"><br><b>Havi kedvezményes keret</b><br><sub>Hivatalos jelleggörbe, szerkeszthető</sub></td>
     <td align="center"><img src="docs/screenshots/elozmenyek.png" width="220" alt="Előzmények"><br><b>Előzmények</b><br><sub>Leolvasások szerkesztése és törlése</sub></td>
-    <td align="center"><img src="docs/screenshots/beallitasok.png" width="220" alt="Beállítások"><br><b>Beállítások</b><br><sub>Keret, havi értékek, gázár, emlékeztetők</sub></td>
-    <td></td>
+    <td align="center"><img src="docs/screenshots/beallitasok.png" width="220" alt="Beállítások"><br><b>Beállítások</b><br><sub>Keret, gázár, export</sub></td>
   </tr>
 </table>
 
@@ -56,23 +57,35 @@ Minden adat a telefonon marad (SQLite adatbázisban), nincs regisztráció és n
 - **Kihagyott napok kezelése:** ha egy-két nap kimarad, a két leolvasás közti fogyasztás
   egyenletesen oszlik el a köztes napokra.
 - **Diagramok értékekkel:** oszlopdiagramok a napi, heti és havi fogyasztásról, a köbméter-értékek
-  az oszlopok fölött. Borostyánszínű jelöli, ahol a fogyasztás az ajánlott fölött van.
+  az oszlopok fölött. Borostyánszínű jelöli, ahol a fogyasztás a (napi vagy havi) keret fölött van.
 - **Gázév (augusztus 1. – július 31.):** minden éves érték, diagram és becslés a gázévre
   vonatkozik, a havi értékek augusztustól júliusig sorakoznak.
-- **Gázév végi becslés:** az eddigi fogyasztás és a hátralévő hónapok ajánlott értékei
-  alapján, a tényleges tempóhoz igazítva.
-- **Gázköltség kétsávos árral:** a keretig kedvezményes, felette piaci áron. A Főoldal mutatja
-  az aktuális hónap és a gázév eddigi és becsült költségét, és figyelmeztet, ha a becslés
-  túllépi a keretet. A Limit képernyő szemlélteti az árlépcsőt, a Rögzítés pedig a mért
-  mennyiség árát. Mindkét ár a Beállításokban módosítható (alapból 102 és 747 Ft/m³).
-- **Minden beállítás egy helyen:** a kedvezményes keret (alapból 1 729 m³, havi átlag 144 m³),
-  a 12 havi ajánlott érték és a két gázár a Beállításokban módosítható. A Limit képernyő csak
-  megjeleníti a keretet. Az ajánlott értékek alapösszege 1 710 m³.
+- **Hivatalos havi keret (jelleggörbe):** az éves 63 645 MJ-os keret havi bontása az MVM Next
+  tájékoztatója szerint (pl. január 12 365 MJ ≈ 355 m³, október 3 724 MJ ≈ 107 m³). Hónaponként
+  átírható, és egy gombbal visszaállítható.
+- **Energia (MJ) alapú keret és ár:** a keret és a piaci ár hivatalosan MJ-ben van megadva. Az
+  app a beállítható fűtőértékkel (alapból 34,8 MJ/m³) számolja át köbméterre; így a 63 645 MJ
+  kb. 1 829 m³, a 22,002 Ft/MJ piaci ár kb. 766 Ft/m³.
+- **Havi diktálás szerinti költség:** minden hónapnak saját kerete van; a havi keret feletti
+  rész az adott havi számlán piaci áron szerepel. A Főoldal mutatja a hónap keretének
+  kihasználtságát, a havi számlát, a gázév számláinak összegét és az éves elszámolás utáni
+  összeget a várható visszatérítéssel. A Rögzítés a mért mennyiség árát is kiírja.
+- **Megmaradt keret:** a lezárt hónapokban fel nem használt keret összege. Ennyivel lehet egy
+  hidegebb hónapban a havi keret felett fogyasztani úgy, hogy az éves elszámoláskor még
+  kedvezményes áron számolják el. Csak a ténylegesen követett napok számítanak bele.
+- **Export:** a leolvasások CSV-ben (Excelben megnyitható), és teljes biztonsági mentés
+  JSON-ben (leolvasások; fűtőérték, éves limit és a két ár MJ-ben és m³-ben; havi keretek
+  MJ-ben és m³-ben). Mentésnél a telefon „Mentés helye”
+  ablakában választható ki, hová kerüljön a fájl.
+- **Gázév végi becslés:** az eddigi fogyasztás és a hátralévő hónapok kerete alapján, a
+  tényleges tempóhoz igazítva.
+- **Minden beállítás egy helyen:** a fűtőérték, az éves keret (MJ), a havi keretek és a két
+  gázár a Beállításokban módosítható. A Limit képernyő csak megjeleníti a keretet.
 - **Sötét téma, magyar felület**, saját betűtípusokkal (Bricolage Grotesque és IBM Plex Mono),
   kikapcsolható animációkkal.
 
-**Tervezett:** értesítések (napi emlékeztető, figyelmeztetés a limit 80 és 95%-ánál, heti
-összefoglaló) és CSV-export. A beállítások már mentődnek, de értesítést az app még nem küld.
+**Tervezett:** értesítések (napi emlékeztető, figyelmeztetés a havi és az éves keret
+közelében) és a biztonsági mentés visszatöltése.
 
 ## Hogyan számol?
 
@@ -80,14 +93,17 @@ Minden adat a telefonon marad (SQLite adatbázisban), nincs regisztráció és n
 | --- | --- |
 | Napi fogyasztás | Két leolvasás különbsége, egyenletesen elosztva a köztes napokra |
 | Gázévben összesen | A napi fogyasztások összege a gázév elejétől (augusztus 1.) |
-| Ajánlott ütem | A havi ajánlott értékek összege augusztus 1-jétől máig (az aktuális hónap arányos részével), a keret százalékában |
-| Gázév végi becslés | Eddigi fogyasztás + a július 31-ig hátralévő ajánlott mennyiség × (tényleges ÷ ajánlott fogyasztás a követett időszakban) |
-| Költség | A gázév elejétől a keretig kedvezményes ár, a keret felett piaci ár; pl. 1 829 m³ = 1 729 × 102 + 100 × 747 Ft |
-| Többletköltség | A becsült kereten felüli mennyiség × (piaci ár − kedvezményes ár) |
+| Átszámítás | m³ = MJ ÷ fűtőérték; a piaci ár Ft/m³-ben = Ft/MJ × fűtőérték |
+| Keret szerinti ütem | A havi keretek összege augusztus 1-jétől máig (az aktuális hónap arányos részével), az éves keret százalékában |
+| Gázév végi becslés | Eddigi fogyasztás + a július 31-ig hátralévő havi keretek × (tényleges ÷ keret szerinti fogyasztás a követett időszakban) |
+| Havi számla | min(havi fogyasztás, havi keret) × kedvezményes ár + a havi keret feletti rész × piaci ár; pl. októberben 150 m³ a 107 m³-es kerettel: 107 × 102 + 43 × 766 Ft |
+| Éves elszámolás | A gázév teljes fogyasztása az éves kerettel: a keretig kedvezményes, felette piaci ár |
+| Visszatérítés | A havi számlák összege − az éves elszámolás szerinti összeg (ha éves szinten a keret alatt maradsz) |
+| Többletköltség | A becsült éves kereten felüli mennyiség × (piaci ár − kedvezményes ár); ez nem jár vissza |
 | Napi átlag | Az utolsó 7 nap átlaga, csak azokra a napokra, amelyekre van adat |
 
-A keret éves: a havi 144 m³ csak tájékoztató átlag (1 729 / 12), a költséget az app a
-gázév elejétől összesített fogyasztásból számolja.
+Az app a **havi diktálásos** elszámolást követi. Átalánydíjas részszámlánál a kedvezmény
+naparányos (napi 174,4 MJ), ezt az app jelenleg nem modellezi.
 
 Ha a gázév közben kezded használni, a korábbi hónapok fogyasztását az app nem ismeri, ezért a
 „gázévben összesen”, a költség és a becslés is alacsonyabb lesz a valóságosnál.

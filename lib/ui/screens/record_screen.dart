@@ -314,26 +314,29 @@ class _DigitField extends StatelessWidget {
   }
 }
 
-/// A mért mennyiség ára: a keretig kedvezményes, felette piaci áron.
+/// A mért mennyiség ára a havi számlán: a hónap kedvezményes keretéig
+/// kedvezményes, felette piaci áron.
 class _CostLine extends StatelessWidget {
-  const _CostLine({required this.model, required this.before, required this.amount});
+  const _CostLine({required this.model, required this.prev, required this.day, required this.amount});
 
   final ConsumptionModel model;
-  final double before;
+  final DateTime prev;
+  final DateTime day;
   final double amount;
 
   @override
   Widget build(BuildContext context) {
     final p = model.pricing;
-    final cost = p.costOfNext(before, amount);
-    final overPart = (before + amount - p.limit).clamp(0.0, amount);
+    final cost = model.readingCost(prev, day, amount);
+    final overPart = model.readingOverKeret(prev, day, amount);
+    final month = Fmt.monthNames[day.month - 1].toLowerCase();
     final String label;
     if (overPart <= 0) {
       label = 'kedvezményes áron (${Fmt.unitPrice(p.discountPrice)})';
     } else if (overPart >= amount) {
-      label = 'piaci áron (${Fmt.unitPrice(p.marketPrice)}), a keret felett';
+      label = 'piaci áron (${Fmt.unitPrice(p.marketPrice)}), a $month keret felett';
     } else {
-      label = 'ebből ${Fmt.m3One(overPart)} m³ már piaci áron';
+      label = 'ebből ${Fmt.m3One(overPart)} m³ a $month keret felett, piaci áron';
     }
     final color = overPart > 0 ? AppColors.warn : AppColors.muted;
     return Row(
@@ -428,7 +431,7 @@ class _DeltaCard extends StatelessWidget {
           ),
           if (!day.isBefore(model.yearStart) && delta > 0) ...[
             const SizedBox(height: 10),
-            _CostLine(model: model, before: model.usedBeforeInYear(addDays(prev.day, 1)), amount: delta),
+            _CostLine(model: model, prev: prev.day, day: day, amount: delta),
           ],
         ],
       ),

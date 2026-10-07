@@ -47,7 +47,7 @@ void main() {
     for (final (location, text) in [
       ('/statisztika', 'Havi fogyasztás (gázév)'),
       ('/limit', 'Gázár'),
-      ('/havi-ertekek','Ajánlott összeg a gázévre'),
+      ('/havi-ertekek','Havi keretek összesen'),
       ('/beallitasok', 'Kékláng 0.1.0 (1)'),
       ('/elozmenyek', 'Még nincs leolvasás'),
       ('/rogzites', 'Új leolvasás'),
@@ -66,13 +66,13 @@ void main() {
     // A havi értékek a Beállításokból is elérhetők, és a vissza gomb oda tér vissza.
     router.go('/beallitasok');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Havi ajánlott értékek'));
+    await tester.tap(find.text('Havi kedvezményes keret'));
     await tester.pumpAndSettle();
-    expect(find.text('Ajánlott összeg a gázévre'), findsOneWidget);
+    expect(find.text('Havi keretek összesen'), findsOneWidget);
     await tester.tap(find.byIcon(Icons.chevron_left_rounded));
     await tester.pumpAndSettle();
     expect(find.text('Beállítások'), findsWidgets);
-    expect(find.text('Ajánlott összeg a gázévre'), findsNothing);
+    expect(find.text('Havi keretek összesen'), findsNothing);
 
     // A memóriabeli adatbázist nem zárjuk le: a db.close() a teszt szimulált
     // idejében végtelenül várna, és a teszt végén úgyis megszűnik.
